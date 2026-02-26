@@ -2206,8 +2206,12 @@
       socket.on("sync_state", (data) => {
         data.tables.forEach((serverTable) => {
           const localIndex = tables.findIndex((t) => t.id === serverTable.id);
-          if (localIndex !== -1)
+          if (localIndex !== -1) {
             tables[localIndex] = { ...tables[localIndex], ...serverTable };
+          } else {
+            // Adds the brand new tables sent from the server!
+            tables.push(serverTable);
+          }
         });
         kitchenOrders = data.kitchenOrders;
 
@@ -2838,7 +2842,7 @@
 
       // --- TABLE DATA (Upgraded) ---
       let activeTableId = null; // Changed from 'T4' so Waiters must select a table first
-      const tables = [
+      let tables = [
         {
           id: "T1",
           name: "Available",
@@ -3026,16 +3030,16 @@
 
         if (savedTables) {
           const parsedTables = JSON.parse(savedTables);
-          // Map saved state back to tables array, removing old timers
-          parsedTables.forEach((pt, i) => {
-            if (tables[i]) {
-              tables[i] = { ...tables[i], ...pt, recallTimer: null };
-              // If it was in RECALL state on reload, just dump it back to OCCUPIED to be safe
-              if (tables[i].status === STATUS.SENT_WAITING_RECALL) {
-                tables[i].status = STATUS.OCCUPIED;
-                tables[i].recallRemaining = 0;
-              }
+          // Rebuilds the ENTIRE table list so new tables aren't ignored
+          tables = parsedTables.map((pt) => {
+            if (
+              pt.status === "Sending..." ||
+              (pt.status === "Sent to Kitchen" && pt.recallRemaining > 0)
+            ) {
+              pt.status = "Occupied";
+              pt.recallRemaining = 0;
             }
+            return { ...pt, recallTimer: null };
           });
         }
         if (savedKitchen) kitchenOrders = JSON.parse(savedKitchen);
@@ -4698,10 +4702,10 @@
             : 1;
 
         for (let i = 0; i < count; i++) {
-          tables.push({
+          const newTable = {
             id: `T${nextId}`,
             name: "Available",
-            status: STATUS.AVAILABLE,
+            status: "Available",
             bg: "bg-gray-100",
             text: "text-gray-400",
             cart: [],
@@ -4712,10 +4716,17 @@
             recallTimer: null,
             recallRemaining: 0,
             payRecords: [],
-          });
+          };
+
+          tables.push(newTable);
+
+          // Tell the Mac server a completely new table was created!
+          if (typeof socket !== "undefined") {
+            socket.emit("update_table", newTable);
+          }
+
           nextId++;
         }
-
         saveData();
         renderTablesView();
         showToast(`${t("table_added")} (${count})`, "success");

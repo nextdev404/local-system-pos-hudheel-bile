@@ -41,7 +41,9 @@ io.on("connection", (socket) => {
     const index = tables.findIndex((t) => t.id === tableData.id);
     if (index !== -1) {
       tables[index] = tableData;
-      broadcastState();
+    } else {
+      // FIX: Allow the server to save brand new tables added by the Admin!
+      tables.push(tableData);
     }
   });
 
